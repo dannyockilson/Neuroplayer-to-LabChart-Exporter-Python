@@ -81,6 +81,8 @@ python script_name.py [options]
 ## Step 3: Set Up Your Workspace
 
 1. Download or copy all the tool files to a folder on your computer
+    a. For users familiar with git, clone this repository
+    b. Alternatively use the "Code" button on github and select "Download ZIP". You will then need to extract files to a folder to begin working with them.
 2. Create a folder for your NDF files (e.g., "my-ndf-files")
 3. Copy your EEG data files (.ndf files) into that folder
 
@@ -96,6 +98,12 @@ your-workspace/
 │   ├── recording2.ndf
 │   └── recording3.ndf
 ```
+
+### Already converted files via Neuroplayer to txt?
+
+You will still need to download or copy all the tool files to a folder on your computer (as above) but instead of copying your NDF files, create a folder and copy in your .txt files instead (e.g., "my-text-files").
+
+You can then skip step 4.a below and move directly to the conversion to LabChart supported formats.
 
 ## Step 4: Convert Your Data
 
