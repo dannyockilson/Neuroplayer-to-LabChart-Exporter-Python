@@ -566,11 +566,4 @@ This code is derived from open source examples provided by Open Source Instrumen
 
 ## Contributing
 
-To adapt this for your specific NDF file format:
-
-1. Implement `NDFReader.read_channel_data()` with proper NDF parsing
-2. Handle telemetry message reconstruction
-3. Account for signal loss and timing corrections
-4. Test with your actual data files
-
-For questions about the NDF format, consult the Neuroplayer documentation or contact Open Source Instruments.
+Please see our [Contributers Guide](CONTRIBUTING.md) for full details on contributing to this project.
