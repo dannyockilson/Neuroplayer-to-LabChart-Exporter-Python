@@ -6,6 +6,8 @@ Python conversion of the LabChart Exporter from the [Neuroplayer Processor Libra
 
 This tool converts EEG data from Neuroplayer's NDF (Neuroscience Data Format) files into text format suitable for import into LabChart software. The output format follows the LabChart specification with proper headers and time-voltage pairs.
 
+If you just want to get started follow the [Quick Start Guide](QUICK_START.md)
+
 ## Why Python Instead of TCL?
 
 While Open Source Instruments provides excellent TCL scripts for LabChart export, this Python implementation addresses several practical challenges:
