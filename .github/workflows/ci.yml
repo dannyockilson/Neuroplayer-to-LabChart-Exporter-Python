@@ -27,7 +27,6 @@ jobs:
           pip install black isort mypy pytest pytest-cov
           # Install project dependencies if requirements files exist
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
       - name: Check code formatting with Black
         run: |
@@ -46,16 +45,6 @@ jobs:
         run: |
           python -m pytest --cov=. --cov-report=xml --cov-report=term
         continue-on-error: false  # Fail if tests don't pass
-
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          file: ./coverage.xml
-          flags: unittests
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   lint-summary:
     name: Linting Summary

@@ -73,7 +73,7 @@ We welcome several types of contributions:
 
 2. Install development dependencies:
    ```bash
-   pip install -r requirements-dev.txt  # If this file exists
+   pip install -r requirements.txt  # If this file exists
    ```
 
 3. Install the package in development mode:

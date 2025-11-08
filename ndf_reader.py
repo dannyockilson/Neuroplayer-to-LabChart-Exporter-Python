@@ -254,7 +254,9 @@ class NDFReader:
         # Also cache the available channels list
         self._channels_cache = sorted(grouped_messages.keys())
 
-        print(f"Parsed {len(all_messages)} total messages across {len(grouped_messages)} channels")
+        print(
+            f"Parsed {len(all_messages)} total messages across {len(grouped_messages)} channels"
+        )
         return self._parsed_messages
 
     def _messages_to_intervals(
