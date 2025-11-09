@@ -81,6 +81,32 @@ We welcome several types of contributions:
    pip install -e .
    ```
 
+### Git Hooks
+
+The project includes git hooks to maintain code quality automatically. **You must install them after cloning:**
+
+```bash
+# Run from the repository root
+bash .githooks/install-hooks.sh
+```
+
+This installs:
+- **pre-commit hook**: Runs black, isort, and mypy on all staged Python files
+- **pre-push hook**: Runs the full test suite before pushing
+
+The hooks will:
+- Automatically format your code before commits
+- Prevent commits with type errors
+- Prevent pushes if tests fail
+
+If you need to bypass the hooks temporarily (not recommended):
+```bash
+git commit --no-verify  # Skip pre-commit hook
+git push --no-verify    # Skip pre-push hook
+```
+
+See `.githooks/README.md` for more details.
+
 ### Testing Your Setup
 
 1. Run the basic functionality test:
@@ -201,10 +227,11 @@ Update documentation for new output formats
 ### Pull Request Process
 
 1. **Before submitting:**
-   - Run tests and ensure they pass
+   - Run tests and ensure they pass (`python -m pytest tests/`)
    - Update documentation if needed
    - Add tests for new features
-   - Check code formatting
+   - Format code with black and isort (automatically handled by git hooks)
+   - Verify type checking passes (`python -m mypy *.py tests/*.py --ignore-missing-imports`)
 
 2. **Pull request description:**
    - Clearly describe what changes were made

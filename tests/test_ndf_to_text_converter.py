@@ -7,8 +7,7 @@ import tempfile
 import pytest
 
 from ndf_to_text_converter import NDFToTextConverter, bulk_convert_ndf_to_text
-from tests.ndf_test_utils import (create_multi_channel_ndf_file,
-                                  create_valid_ndf_file)
+from tests.ndf_test_utils import create_multi_channel_ndf_file, create_valid_ndf_file
 
 
 class TestNDFToTextConverter:

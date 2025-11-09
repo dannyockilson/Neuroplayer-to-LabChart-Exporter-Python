@@ -72,9 +72,23 @@ The core library uses only Python standard library, but some examples require ad
 ### Basic Installation
 
 ```bash
-# Simply copy the files to your working directory
+# Clone the repository
+git clone https://github.com/yourusername/ndf-labchart.git
+cd ndf-labchart
+
 # Requires Python 3.6+
 ```
+
+### For Contributors
+
+If you plan to contribute, install the git hooks to maintain code quality:
+
+```bash
+# Install git hooks (runs code formatting and tests automatically)
+bash .githooks/install-hooks.sh
+```
+
+This sets up pre-commit and pre-push hooks that automatically check code formatting and run tests.
 
 ### For Examples and Advanced Features
 

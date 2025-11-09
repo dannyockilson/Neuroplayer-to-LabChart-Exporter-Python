@@ -328,7 +328,8 @@ class NDFReader:
 
     def get_creation_date(self) -> str:
         """Get the creation date from metadata"""
-        return self.metadata.get("created", "Unknown")
+        result = self.metadata.get("created", "Unknown")
+        return str(result)
 
     def get_available_channels(self) -> List[int]:
         """
