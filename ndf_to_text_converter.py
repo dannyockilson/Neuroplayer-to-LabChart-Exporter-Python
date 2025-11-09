@@ -23,7 +23,7 @@ import glob
 import os
 import sys
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ndf_reader import NDFReader
 
@@ -54,7 +54,7 @@ class NDFToTextConverter:
         input_file: str,
         output_dir: str,
         channels: Optional[List[int]] = None,
-        sample_rate: float = 512.0,
+        sample_rate: Optional[float] = None,
     ) -> List[str]:
         """
         Convert a single NDF file to text format.
@@ -63,7 +63,7 @@ class NDFToTextConverter:
             input_file: Path to input NDF file
             output_dir: Output directory for text files
             channels: List of specific channels to extract (None for all)
-            sample_rate: Sample rate for interval processing
+            sample_rate: Sample rate for interval processing (None for auto-detect per channel)
 
         Returns:
             List of created text file paths
@@ -102,8 +102,15 @@ class NDFToTextConverter:
             # Convert each channel
             created_files = []
             for channel in process_channels:
+                # Use auto-detected sample rate if not specified
+                channel_sample_rate = (
+                    sample_rate
+                    if sample_rate is not None
+                    else reader.get_channel_sample_rate(channel)
+                )
+
                 output_file = self._convert_channel(
-                    reader, channel, input_file, output_dir, sample_rate
+                    reader, channel, input_file, output_dir, channel_sample_rate
                 )
                 if output_file:
                     created_files.append(output_file)
@@ -132,13 +139,9 @@ class NDFToTextConverter:
                 print(f"    Channel {channel}: No data found")
                 return None
 
-            # Create subdirectory for this NDF file
-            base_name = os.path.splitext(os.path.basename(input_file))[0]
-            file_output_dir = os.path.join(output_dir, base_name)
-            os.makedirs(file_output_dir, exist_ok=True)
-
-            # Create output filename using E{channel} naming convention
-            output_file = os.path.join(file_output_dir, f"E{channel}.txt")
+            # Create output filename using E{channel} naming convention directly in output_dir
+            # (No subdirectory - sessions now handle directory structure)
+            output_file = os.path.join(output_dir, f"E{channel}.txt")
 
             # Write text file based on format
             if self.output_format == "simple":
@@ -268,6 +271,93 @@ def find_ndf_files(input_path: str) -> List[str]:
         raise FileNotFoundError(f"Path not found: {input_path}")
 
 
+def group_ndf_files_into_sessions(
+    ndf_files: List[str], gap_threshold: float = 3600.0
+) -> List[List[str]]:
+    """
+    Group NDF files into continuous sessions based on timestamps and gaps.
+
+    Files are sorted by their Unix timestamp (from Mx.ndf filename).
+    A new session starts when the gap between consecutive files exceeds gap_threshold.
+
+    Args:
+        ndf_files: List of NDF file paths
+        gap_threshold: Maximum time gap in seconds to consider files part of same session (default: 3600 = 1 hour)
+
+    Returns:
+        List of sessions, where each session is a list of NDF file paths in chronological order
+    """
+    if not ndf_files:
+        return []
+
+    # Create list of (timestamp, duration, filepath) tuples
+    # We create readers once and cache the data we need
+    files_with_data: List[Tuple[int, Optional[float], str]] = []
+
+    print(f"Analyzing {len(ndf_files)} files for session grouping...")
+
+    for filepath in ndf_files:
+        reader = NDFReader(filepath)
+        timestamp = reader.get_archive_start_time()
+
+        if timestamp is None:
+            print(
+                f"Warning: Cannot extract timestamp from {os.path.basename(filepath)}, skipping"
+            )
+            continue
+
+        # Get duration once while we have the reader
+        duration = reader.get_file_duration()
+
+        files_with_data.append((timestamp, duration, filepath))
+
+    if not files_with_data:
+        print("Warning: No files with valid timestamps found")
+        return []
+
+    # Sort by timestamp
+    files_with_data.sort(key=lambda x: x[0])
+
+    # Group into sessions based on gaps
+    sessions: List[List[str]] = []
+    current_session: List[str] = [files_with_data[0][2]]
+
+    for i in range(1, len(files_with_data)):
+        prev_timestamp, prev_duration, prev_file = files_with_data[i - 1]
+        curr_timestamp, curr_duration, curr_file = files_with_data[i]
+
+        # Calculate expected end time of previous file
+        if prev_duration is not None:
+            prev_end_time = prev_timestamp + prev_duration
+        else:
+            # If we can't determine duration, use timestamp as is
+            prev_end_time = prev_timestamp
+
+        # Calculate gap between files
+        gap = curr_timestamp - prev_end_time
+
+        if gap > gap_threshold:
+            # Start new session
+            print(
+                f"Gap of {gap:.1f} seconds detected between {os.path.basename(prev_file)} and {os.path.basename(curr_file)}"
+            )
+            print(f"Starting new session...")
+            sessions.append(current_session)
+            current_session = [curr_file]
+        else:
+            # Continue current session
+            current_session.append(curr_file)
+
+    # Don't forget the last session
+    sessions.append(current_session)
+
+    print(f"Grouped {len(ndf_files)} files into {len(sessions)} session(s)")
+    for i, session in enumerate(sessions, 1):
+        print(f"  Session {i}: {len(session)} file(s)")
+
+    return sessions
+
+
 def bulk_convert_ndf_to_text(
     input_path: str,
     output_dir: Optional[str] = None,
@@ -275,10 +365,14 @@ def bulk_convert_ndf_to_text(
     output_format: str = "simple",
     include_timestamps: bool = False,
     include_metadata: bool = True,
-    sample_rate: float = 512.0,
+    sample_rate: Optional[float] = None,
+    gap_threshold: float = 3600.0,
 ) -> Dict[str, List[str]]:
     """
-    Convert NDF files to text format in bulk.
+    Convert NDF files to text format in bulk with session grouping.
+
+    Files are grouped into continuous sessions based on timestamps.
+    Each session creates a separate directory with E{channel}.txt files.
 
     Args:
         input_path: Input file or directory path
@@ -287,10 +381,11 @@ def bulk_convert_ndf_to_text(
         output_format: Output format ("simple", "detailed", "csv")
         include_timestamps: Include timestamp information
         include_metadata: Include file metadata
-        sample_rate: Sample rate for processing
+        sample_rate: Sample rate for processing (None for auto-detect per channel)
+        gap_threshold: Maximum gap in seconds to consider files part of same session (default: 3600)
 
     Returns:
-        Dictionary mapping input files to created output files
+        Dictionary mapping session names to created output files
     """
     # Find NDF files
     ndf_files = find_ndf_files(input_path)
@@ -299,6 +394,13 @@ def bulk_convert_ndf_to_text(
         return {}
 
     print(f"Found {len(ndf_files)} NDF files")
+
+    # Group files into sessions
+    sessions = group_ndf_files_into_sessions(ndf_files, gap_threshold)
+
+    if not sessions:
+        print("No valid sessions found")
+        return {}
 
     # Set default output directory
     if output_dir is None:
@@ -316,23 +418,86 @@ def bulk_convert_ndf_to_text(
         include_metadata=include_metadata,
     )
 
-    # Convert each file
+    # Convert each session
     results = {}
     total_files_created = 0
 
-    for ndf_file in ndf_files:
-        created_files = converter.convert_ndf_file(
-            input_file=ndf_file,
-            output_dir=output_dir,
-            channels=channels,
-            sample_rate=sample_rate,
-        )
-        results[ndf_file] = created_files
-        total_files_created += len(created_files)
+    for session_num, session_files in enumerate(sessions, 1):
+        # Get session start time from first file
+        first_reader = NDFReader(session_files[0])
+        session_start_time = first_reader.get_archive_start_time()
+
+        # Create session directory name
+        session_name = f"session_{session_num:03d}"
+        if session_start_time:
+            # Include timestamp in session name
+            session_name = f"session_{session_start_time}"
+
+        session_output_dir = os.path.join(output_dir, session_name)
+
+        print(f"\nProcessing {session_name} ({len(session_files)} file(s))...")
+
+        # Process files in chronological order within this session
+        session_created_files = []
+
+        for file_idx, ndf_file in enumerate(session_files):
+            print(
+                f"  File {file_idx + 1}/{len(session_files)}: {os.path.basename(ndf_file)}"
+            )
+
+            # For the first file, create new channel files
+            # For subsequent files, append to existing channel files
+            if file_idx == 0:
+                # First file - create new files
+                created_files = converter.convert_ndf_file(
+                    input_file=ndf_file,
+                    output_dir=session_output_dir,
+                    channels=channels,
+                    sample_rate=sample_rate,
+                )
+                session_created_files.extend(created_files)
+            else:
+                # Subsequent files - append to existing files
+                # Read the file and append data to existing E{channel}.txt files
+                reader = NDFReader(ndf_file)
+                available_channels = reader.get_available_channels()
+
+                # Determine which channels to process
+                if channels is None:
+                    process_channels = available_channels
+                else:
+                    process_channels = [
+                        ch for ch in channels if ch in available_channels
+                    ]
+
+                for channel in process_channels:
+                    # Use auto-detected sample rate if not specified
+                    channel_sample_rate = (
+                        sample_rate
+                        if sample_rate is not None
+                        else reader.get_channel_sample_rate(channel)
+                    )
+
+                    # Read channel data
+                    intervals = reader.read_channel_data(channel, channel_sample_rate)
+
+                    if intervals:
+                        # Append to existing E{channel}.txt file
+                        output_file = os.path.join(
+                            session_output_dir, f"E{channel}.txt"
+                        )
+
+                        with open(output_file, "a", encoding="utf-8") as f:
+                            for interval_time, samples in intervals:
+                                for sample in samples:
+                                    f.write(f"{sample}\n")
+
+        results[session_name] = session_created_files
+        total_files_created += len(session_created_files)
 
     print(f"\nConversion complete!")
-    print(f"Processed {len(ndf_files)} NDF files")
-    print(f"Created {total_files_created} text files")
+    print(f"Processed {len(ndf_files)} NDF files in {len(sessions)} session(s)")
+    print(f"Created {total_files_created} channel files across all sessions")
     print(f"Output directory: {output_dir}")
 
     return results
@@ -395,8 +560,16 @@ Output Formats:
         "--sample-rate",
         "-sr",
         type=float,
-        default=512.0,
-        help="Sample rate in Hz (default: 512)",
+        default=None,
+        help="Sample rate in Hz (default: auto-detect - 128Hz for channel 0, 512Hz for others)",
+    )
+
+    parser.add_argument(
+        "--gap-threshold",
+        "-gt",
+        type=float,
+        default=3600.0,
+        help="Max gap in seconds to consider files part of same session (default: 3600)",
     )
 
     parser.add_argument(
@@ -420,6 +593,7 @@ Output Formats:
             include_timestamps=args.timestamps,
             include_metadata=not args.no_metadata,
             sample_rate=args.sample_rate,
+            gap_threshold=args.gap_threshold,
         )
 
         if args.verbose:

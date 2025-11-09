@@ -26,13 +26,16 @@ from ndf_reader import TextSignalReader
 
 def find_channel_directories(input_dir: str) -> List[str]:
     """
-    Find all subdirectories that contain E{channel}.txt files.
+    Find all session subdirectories that contain E{channel}.txt files.
+
+    Looks for directories named session_* or session_{timestamp} containing
+    channel data files from continuous recording sessions.
 
     Args:
         input_dir: Parent directory to search
 
     Returns:
-        List of subdirectory paths containing channel files
+        List of session directory paths containing channel files, sorted chronologically
     """
     subdirs = []
 
@@ -45,6 +48,7 @@ def find_channel_directories(input_dir: str) -> List[str]:
             if channel_files:
                 subdirs.append(full_path)
 
+    # Sort by directory name (which includes timestamp for session directories)
     return sorted(subdirs)
 
 
@@ -74,15 +78,15 @@ def find_channel_files(directory: str) -> Dict[int, str]:
 
 def load_channel_data(
     channel_files: Dict[int, str],
-    sample_rate: float,
     interval_length: float = 1.0,
 ) -> Dict[int, List[Tuple[float, List[int]]]]:
     """
-    Load data from all channel files.
+    Load data from all channel files with per-channel sample rates.
+
+    Channel 0 uses 128 Hz (clock signal), all other channels use 512 Hz.
 
     Args:
         channel_files: Dictionary mapping channel numbers to file paths
-        sample_rate: Sample rate in Hz
         interval_length: Length of each interval in seconds
 
     Returns:
@@ -92,6 +96,11 @@ def load_channel_data(
 
     for channel_num, file_path in channel_files.items():
         try:
+            # Auto-detect sample rate based on channel number
+            # Channel 0: 128 Hz (clock signal)
+            # Other channels: 512 Hz (default)
+            sample_rate = 128.0 if channel_num == 0 else 512.0
+
             intervals = TextSignalReader.read_signal(
                 filepath=file_path,
                 sample_rate=sample_rate,
@@ -99,7 +108,9 @@ def load_channel_data(
             )
             if intervals:
                 channel_data[channel_num] = intervals
-                print(f"  Channel {channel_num}: {len(intervals)} intervals loaded")
+                print(
+                    f"  Channel {channel_num}: {len(intervals)} intervals loaded ({sample_rate} Hz)"
+                )
             else:
                 print(f"  Channel {channel_num}: Warning - no data found")
         except Exception as e:
@@ -115,10 +126,13 @@ def convert_directory(
     interval_length: float = 1.0,
 ) -> Optional[str]:
     """
-    Convert all channel files in a directory to a single unified LabChart file.
+    Convert all channel files in a session directory to a single unified LabChart file.
+
+    Extracts session timestamp from directory name (session_{timestamp}) for both
+    creation date and output filename.
 
     Args:
-        input_dir: Directory containing E{channel}.txt files
+        input_dir: Session directory containing E{channel}.txt files
         output_dir: Output directory for LabChart file
         exporter: LabChartExporter instance
         interval_length: Length of each interval in seconds
@@ -138,10 +152,9 @@ def convert_directory(
 
     print(f"  Found {len(channel_files)} channel files: {sorted(channel_files.keys())}")
 
-    # Load all channel data
+    # Load all channel data with per-channel sample rates
     channel_data = load_channel_data(
         channel_files=channel_files,
-        sample_rate=exporter.sample_rate,
         interval_length=interval_length,
     )
 
@@ -149,10 +162,19 @@ def convert_directory(
         print(f"  Warning: No valid data loaded from any channels")
         return None
 
-    # Get creation date from directory metadata or first file
-    first_file = list(channel_files.values())[0]
-    file_mtime = os.path.getmtime(first_file)
-    creation_date = datetime.fromtimestamp(file_mtime).strftime("%Y-%m-%d %H:%M:%S")
+    # Extract session timestamp from directory name (session_{timestamp})
+    # Fallback to file modification time if extraction fails
+    session_pattern = re.compile(r"session_(\d{10})")
+    match = session_pattern.match(dir_name)
+
+    if match:
+        timestamp = int(match.group(1))
+        creation_date = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        # Fallback to first file modification time
+        first_file = list(channel_files.values())[0]
+        file_mtime = os.path.getmtime(first_file)
+        creation_date = datetime.fromtimestamp(file_mtime).strftime("%Y-%m-%d %H:%M:%S")
 
     # Create output filename based on directory name
     output_file = os.path.join(output_dir, f"{dir_name}.txt")
@@ -184,12 +206,16 @@ def bulk_convert(
     glitch_threshold: int = 500,
 ) -> List[str]:
     """
-    Bulk convert all channel directories to unified LabChart format.
+    Bulk convert all session directories to unified LabChart format.
+
+    Sample rates are auto-detected per channel:
+    - Channel 0: 128 Hz (clock signal)
+    - Other channels: 512 Hz
 
     Args:
-        input_dir: Input directory containing subdirectories with E{channel}.txt files
+        input_dir: Input directory containing session subdirectories with E{channel}.txt files
         output_dir: Output directory (default: input_dir + '_labchart')
-        sample_rate: Sample rate in Hz
+        sample_rate: DEPRECATED - Sample rates are now auto-detected per channel
         range_mV: Input dynamic range in millivolts
         interval_length: Length of each interval in seconds
         use_commas: Use European format (commas for decimals)
@@ -250,7 +276,9 @@ def bulk_convert(
             created_files.append(output_file)
 
     print(f"\nConversion complete!")
-    print(f"Successfully converted {len(created_files)} out of {len(channel_dirs)} directories")
+    print(
+        f"Successfully converted {len(created_files)} out of {len(channel_dirs)} directories"
+    )
     print(f"Output files: {output_dir}")
 
     return created_files
@@ -259,38 +287,44 @@ def bulk_convert(
 def main():
     """Main entry point for command line usage"""
     parser = argparse.ArgumentParser(
-        description="Bulk convert EEG channel directories to unified LabChart format",
+        description="Bulk convert EEG session directories to unified LabChart format",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Basic conversion with default settings
-  python bulk_converter.py ndf_files_text
+  python bulk_converter.py test_sessions
 
-  # Custom output directory and sample rate
-  python bulk_converter.py ndf_files_text output --sample-rate 1024 --range 30
+  # Custom output directory with options
+  python bulk_converter.py test_sessions output --range 120 --commas
 
   # European format with microvolts
-  python bulk_converter.py data output --commas --microvolts
+  python bulk_converter.py test_sessions output --commas --microvolts
 
-  # High precision timing in milliseconds
-  python bulk_converter.py data output --milliseconds --absolute-time
+  # High precision timing with absolute UNIX timestamps
+  python bulk_converter.py test_sessions output --milliseconds --absolute-time
 
 Expected Input Structure:
   input_dir/
-  ├── M1555404530/
-  │   ├── E0.txt
-  │   ├── E1.txt
-  │   ├── E2.txt
-  │   └── E15.txt
-  └── M1555404531/
+  ├── session_1555404530/    (continuous recording session)
+  │   ├── E0.txt             (Channel 0: 128 Hz clock signal)
+  │   ├── E1.txt             (Channel 1: 512 Hz)
+  │   ├── E2.txt             (Channel 2: 512 Hz)
+  │   └── E15.txt            (Channel 15: 512 Hz)
+  └── session_1558948567/    (next session after gap)
       ├── E0.txt
       ├── E1.txt
       └── E2.txt
 
 Output:
   output_dir/
-  ├── M1555404530.txt  (contains all channels in unified format)
-  └── M1555404531.txt  (contains all channels in unified format)
+  ├── session_1555404530.txt  (all channels merged, tab-separated)
+  └── session_1558948567.txt  (all channels merged, tab-separated)
+
+Notes:
+  - Channel 0 is automatically detected as 128 Hz (clock signal)
+  - All other channels are automatically detected as 512 Hz
+  - The --sample-rate option is deprecated but retained for compatibility
+  - Session directories are typically created by ndf_to_text_converter.py
         """,
     )
 
@@ -310,7 +344,7 @@ Output:
         "-sr",
         type=float,
         default=512.0,
-        help="Sample rate in Hz (default: 512)",
+        help="DEPRECATED - Sample rates are auto-detected per channel (Ch0: 128Hz, others: 512Hz)",
     )
 
     parser.add_argument(

@@ -137,7 +137,7 @@ python bulk_converter.py input_folder
 python bulk_converter.py input_folder output_folder
 
 # With custom settings
-python bulk_converter.py input_folder output_folder --sample-rate 512 --range 120
+python bulk_converter.py input_folder output_folder --range 120
 ```
 
 **Note:** The bulk converter now expects a directory structure with subdirectories containing E{channel}.txt files (e.g., E1.txt, E2.txt). Each subdirectory is converted into a single unified LabChart file with all channels as tab-separated columns.
@@ -148,7 +148,6 @@ python bulk_converter.py input_folder output_folder --sample-rate 512 --range 12
 python bulk_converter.py [input_dir] [output_dir] [options]
 
 Options:
-  --sample-rate, -sr    Sample rate in Hz (default: 512)
   --range, -r          Input dynamic range in mV (default: 120)
   --interval-length    Length of each interval in seconds (default: 1.0)
   --commas             Use European format (commas for decimals)
@@ -158,6 +157,8 @@ Options:
   --glitch-threshold   Glitch filter threshold (default: 500, 0 to disable)
   --verbose, -v        Verbose output
   --help, -h           Show help message
+
+Note: Sample rates are now auto-detected per channel (Ch0: 128Hz, others: 512Hz)
 ```
 
 #### Bulk Converter Examples
@@ -167,7 +168,7 @@ Options:
 python bulk_converter.py ndf_text_output output --range 120
 
 # AC transmitter with different settings
-python bulk_converter.py ndf_text_output output --range 30 --sample-rate 1024
+python bulk_converter.py ndf_text_output output --range 30
 
 # European format with microvolts
 python bulk_converter.py ndf_text_output output --commas --microvolts
@@ -206,10 +207,11 @@ Options:
   --output, -o          Output directory (default: input_path + '_text')
   --channels, -c        Specific channels to extract (default: all channels)
   --format, -f          Output format: simple, detailed, csv (default: simple)
-  --sample-rate, -sr    Sample rate in Hz (default: 512)
   --timestamps          Include timestamp information
   --no-metadata         Exclude metadata headers
   --verbose, -v         Verbose output
+
+Note: Sample rates are auto-detected per channel (Ch0: 128Hz, others: 512Hz)
 ```
 
 #### Output Formats
@@ -238,6 +240,9 @@ The NDF reader automatically handles:
 - **Message Parsing**: Decodes 8-byte telemetry messages
 - **Timing Reconstruction**: Converts timestamps to relative timing
 - **Data Validation**: Ensures 16-bit signal compatibility
+- **Per-Channel Sample Rates**: Auto-detects channel-specific rates
+  - Channel 0: 128 Hz (clock signal channel)
+  - Channels 1-15: 512 Hz (data channels)
 
 ### Manual Conversion (API Usage)
 
@@ -314,8 +319,8 @@ reader = NDFReader('data.ndf')
 print(f"Created: {reader.get_creation_date()}")
 print(f"Channels: {reader.get_available_channels()}")
 
-# Extract specific channel
-intervals = reader.read_channel_data(channel_num=1, sample_rate=512.0)
+# Extract specific channel (sample rate auto-detected: Ch0=128Hz, others=512Hz)
+intervals = reader.read_channel_data(channel_num=1)
 
 # Export to LabChart
 exporter = LabChartExporter(sample_rate=512.0, range_mV=120.0)
@@ -333,6 +338,7 @@ output_file = exporter.export_channel(
 from ndf_reader import SimpleBinarySignalReader
 
 # Read 16-bit binary data
+# Note: Binary files require explicit sample_rate since auto-detection only works for NDF files
 intervals = SimpleBinarySignalReader.read_signal(
     filepath="signal_data.bin",
     sample_rate=512.0,
@@ -353,6 +359,7 @@ exporter.export_channel(
 from ndf_reader import TextSignalReader
 
 # Read text file (one value per line)
+# Note: Text files require explicit sample_rate since auto-detection only works for NDF files
 intervals = TextSignalReader.read_signal(
     filepath="signal_data.txt",
     sample_rate=512.0,

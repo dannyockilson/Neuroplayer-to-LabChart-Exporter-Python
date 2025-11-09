@@ -127,7 +127,11 @@ This will:
 
 **What happens:** The tool finds all your recording files and extracts the brain signal data from each one. For each NDF file (like M1555404530.ndf), it creates a matching subdirectory (M1555404530/) with separate channel files (E0.txt, E1.txt, E2.txt, etc.).
 
-**Important note on channel zero:** The output channel 0 represents the clock messages channel and occur at 128 Hz.
+**Important note on channels:**
+- Channel 0: Clock signal (128 Hz) - used for timing synchronization
+- Channels 1-15: EEG data channels (512 Hz) - your brain activity recordings
+
+The tool automatically detects and uses the correct rate for each channel type.
 
 #### Performance Notes
 

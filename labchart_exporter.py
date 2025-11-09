@@ -9,7 +9,7 @@ https://www.opensourceinstruments.com/Electronics/A3018/Processor_Library.html
 import os
 import struct
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 class LabChartExporter:
@@ -230,6 +230,10 @@ class LabChartExporter:
         """
         Export multiple channels to a single unified LabChart file.
 
+        Per-channel sample rates are auto-detected:
+        - Channel 0: 128 Hz (clock signal)
+        - Other channels: 512 Hz
+
         Args:
             output_file: Path to output file
             channel_data: Dictionary mapping channel numbers to their intervals
@@ -258,13 +262,17 @@ class LabChartExporter:
         all_samples = []
 
         for channel in channels:
+            # Determine sample rate for this channel
+            # Channel 0: 128 Hz (clock signal), others: 512 Hz
+            channel_sample_rate = 128.0 if channel == 0 else 512.0
+
             intervals = channel_data[channel]
             for start_time, signal_values in intervals:
                 # Apply glitch filter if enabled
                 filtered_values = self._apply_glitch_filter(signal_values)
 
-                # Calculate time for each sample
-                sample_period = 1.0 / self.sample_rate
+                # Calculate time for each sample using per-channel sample rate
+                sample_period = 1.0 / channel_sample_rate
                 for i, value in enumerate(filtered_values):
                     sample_time = start_time + (i * sample_period)
                     all_samples.append((sample_time, channel, value))
@@ -274,7 +282,7 @@ class LabChartExporter:
 
         # Group samples by timestamp using rounding for efficiency
         # Round to nearest nanosecond to handle floating point precision
-        timestamp_groups = {}
+        timestamp_groups: Dict[float, Dict[int, int]] = {}
 
         for sample_time, channel, value in all_samples:
             # Round timestamp to avoid floating point comparison issues
@@ -293,6 +301,10 @@ class LabChartExporter:
         if not self.absolute_time:
             if self.start_time is None:
                 self.start_time = sorted_times[0] if sorted_times else 0.0
+            # Ensure start_time is set for type checking
+            start_time_value = self.start_time
+        else:
+            start_time_value = 0.0  # Not used in absolute mode
 
         with open(output_file, "a") as f:
             for sample_time in sorted_times:
@@ -302,7 +314,7 @@ class LabChartExporter:
                 if self.absolute_time:
                     display_time = sample_time
                 else:
-                    display_time = sample_time - self.start_time
+                    display_time = sample_time - start_time_value
 
                 # Format time
                 time_str = self._format_value(display_time, is_time=True)

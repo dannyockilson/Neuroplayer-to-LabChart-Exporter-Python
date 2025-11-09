@@ -249,9 +249,7 @@ class TestMultiChannelExport:
             output_file = os.path.join(temp_dir, "test.txt")
 
             with pytest.raises(ValueError):
-                exporter.export_multi_channel(
-                    output_file=output_file, channel_data={}
-                )
+                exporter.export_multi_channel(output_file=output_file, channel_data={})
 
     def test_export_multi_channel_channel_with_no_intervals(self):
         """Test error handling for channel with no intervals."""

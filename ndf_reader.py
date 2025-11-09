@@ -6,6 +6,7 @@ and extract signal data for export to LabChart format.
 """
 
 import os
+import re
 import struct
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,6 +21,8 @@ class NDFReader:
     message_size: int
     _parsed_messages: Optional[Dict[int, List[Dict]]]
     _channels_cache: Optional[List[int]]
+    _archive_start_time: Optional[int]
+    _channel_sample_rates: Dict[int, float]
 
     def __init__(self, filepath: str):
         """
@@ -34,8 +37,11 @@ class NDFReader:
         self.message_size = 8  # OSI telemetry messages are 8 bytes
         self._parsed_messages = None  # Cache for parsed messages grouped by channel
         self._channels_cache = None  # Cache for available channels
+        self._archive_start_time = None  # Unix timestamp from filename
+        self._channel_sample_rates = {}  # Per-channel sample rates
         self._read_metadata()
         self._find_data_section()
+        self._extract_archive_start_time()
 
     def _read_metadata(self) -> None:
         """Read metadata from NDF file header"""
@@ -139,7 +145,7 @@ class NDFReader:
     def read_channel_data(
         self,
         channel_num: int,
-        sample_rate: float = 512.0,
+        sample_rate: Optional[float] = None,
         message_size: Optional[int] = None,
     ) -> List[Tuple[float, List[int]]]:
         """
@@ -147,7 +153,7 @@ class NDFReader:
 
         Args:
             channel_num: Channel number to read (0-15)
-            sample_rate: Expected sample rate in Hz
+            sample_rate: Expected sample rate in Hz (if None, auto-detects based on channel)
             message_size: Size of each telemetry message in bytes (default: 8)
 
         Returns:
@@ -156,12 +162,17 @@ class NDFReader:
         if message_size is None:
             message_size = self.message_size
 
+        # Auto-detect sample rate if not provided
+        if sample_rate is None:
+            sample_rate = self.get_channel_sample_rate(channel_num)
+
         if self.data_start_offset is None:
             print(f"Error: No telemetry data found in {self.filepath}")
             return []
 
         print(f"Reading channel {channel_num} from {self.filepath}")
         print(f"Data starts at offset {self.data_start_offset}")
+        print(f"Using sample rate: {sample_rate} Hz")
 
         # Get grouped messages (parsed once, cached for subsequent calls)
         grouped_messages = self._parse_and_group_messages()
@@ -338,6 +349,88 @@ class NDFReader:
         self._parse_and_group_messages()
 
         return self._channels_cache or []
+
+    def _extract_archive_start_time(self) -> None:
+        """
+        Extract Unix timestamp from NDF filename (Mx.ndf format).
+
+        The filename should be in the format Mx.ndf where x is a 10-digit Unix timestamp.
+        This timestamp represents the archive start time.
+        """
+        filename = os.path.basename(self.filepath)
+        match = re.match(r"M(\d{10})\.ndf$", filename, re.IGNORECASE)
+
+        if match:
+            self._archive_start_time = int(match.group(1))
+        else:
+            # Filename doesn't match expected pattern
+            self._archive_start_time = None
+
+    def get_archive_start_time(self) -> Optional[int]:
+        """
+        Get the archive start time as Unix timestamp from the filename.
+
+        Returns:
+            Unix timestamp (seconds since epoch) or None if filename doesn't match Mx.ndf pattern
+        """
+        return self._archive_start_time
+
+    def get_channel_sample_rate(self, channel_num: int) -> float:
+        """
+        Get the sample rate for a specific channel.
+
+        Auto-detects channel sample rates:
+        - Channel 0: 128 Hz (clock signal)
+        - Other channels: 512 Hz (default)
+
+        Args:
+            channel_num: Channel number (0-15)
+
+        Returns:
+            Sample rate in Hz
+        """
+        # Check if we have a cached value for this channel
+        if channel_num in self._channel_sample_rates:
+            return self._channel_sample_rates[channel_num]
+
+        # Auto-detect based on channel number
+        # Channel 0 is the clock signal at 128Hz
+        if channel_num == 0:
+            sample_rate = 128.0
+        else:
+            # All other channels default to 512Hz
+            sample_rate = 512.0
+
+        # Cache the result
+        self._channel_sample_rates[channel_num] = sample_rate
+        return sample_rate
+
+    def get_file_duration(self) -> Optional[float]:
+        """
+        Calculate the expected duration of this NDF file based on message count.
+
+        Returns:
+            Duration in seconds, or None if data not available
+        """
+        if self._parsed_messages is None:
+            self._parse_and_group_messages()
+
+        if not self._parsed_messages:
+            return None
+
+        # Get total message count across all channels
+        total_messages = sum(len(msgs) for msgs in self._parsed_messages.values())
+
+        # Each message contains 2 samples
+        # Use 512Hz as baseline (most channels)
+        # This is an approximation - actual duration may vary per channel
+        samples_per_message = 2
+        baseline_sample_rate = 512.0
+
+        total_samples = total_messages * samples_per_message
+        duration = total_samples / baseline_sample_rate
+
+        return duration
 
 
 class SimpleBinarySignalReader:
