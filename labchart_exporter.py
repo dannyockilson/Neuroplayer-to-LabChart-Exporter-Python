@@ -221,6 +221,151 @@ class LabChartExporter:
         )
         return filename
 
+    def export_multi_channel(
+        self,
+        output_file: str,
+        channel_data: dict,
+        creation_date: Optional[str] = None,
+    ) -> str:
+        """
+        Export multiple channels to a single unified LabChart file.
+
+        Args:
+            output_file: Path to output file
+            channel_data: Dictionary mapping channel numbers to their intervals
+                         Format: {channel_num: [(start_time, signal_values), ...]}
+            creation_date: Archive creation date
+
+        Returns:
+            Path to created file
+        """
+        if not channel_data:
+            raise ValueError("No channel data provided")
+
+        # Get all channel numbers sorted
+        channels = sorted(channel_data.keys())
+
+        # Verify all channels have data
+        for channel in channels:
+            if not channel_data[channel]:
+                raise ValueError(f"Channel {channel} has no data")
+
+        # Initialize file with multi-channel header
+        self._init_multi_channel_file(output_file, channels, creation_date)
+
+        # Build unified timeline
+        # Collect all samples from all channels with their timestamps
+        all_samples = []
+
+        for channel in channels:
+            intervals = channel_data[channel]
+            for start_time, signal_values in intervals:
+                # Apply glitch filter if enabled
+                filtered_values = self._apply_glitch_filter(signal_values)
+
+                # Calculate time for each sample
+                sample_period = 1.0 / self.sample_rate
+                for i, value in enumerate(filtered_values):
+                    sample_time = start_time + (i * sample_period)
+                    all_samples.append((sample_time, channel, value))
+
+        # Sort by timestamp to ensure proper ordering
+        all_samples.sort(key=lambda x: (x[0], x[1]))
+
+        # Group samples by timestamp using rounding for efficiency
+        # Round to nearest nanosecond to handle floating point precision
+        timestamp_groups = {}
+
+        for sample_time, channel, value in all_samples:
+            # Round timestamp to avoid floating point comparison issues
+            # Use 9 decimal places (nanosecond precision)
+            rounded_time = round(sample_time, 9)
+
+            if rounded_time not in timestamp_groups:
+                timestamp_groups[rounded_time] = {}
+
+            timestamp_groups[rounded_time][channel] = value
+
+        # Write unified data
+        sorted_times = sorted(timestamp_groups.keys())
+
+        # Determine start time for relative time mode
+        if not self.absolute_time:
+            if self.start_time is None:
+                self.start_time = sorted_times[0] if sorted_times else 0.0
+
+        with open(output_file, "a") as f:
+            for sample_time in sorted_times:
+                channel_values = timestamp_groups[sample_time]
+
+                # Calculate display time
+                if self.absolute_time:
+                    display_time = sample_time
+                else:
+                    display_time = sample_time - self.start_time
+
+                # Format time
+                time_str = self._format_value(display_time, is_time=True)
+
+                # Build line with all channel values
+                line_parts = [time_str]
+                for channel in channels:
+                    if channel in channel_values:
+                        # Convert to voltage
+                        voltage = channel_values[channel] * self.mV_per_count
+                        voltage_str = self._format_value(voltage, is_time=False)
+                        line_parts.append(voltage_str)
+                    else:
+                        # Missing data - use empty or zero
+                        line_parts.append("")
+
+                f.write("\t".join(line_parts) + "\n")
+
+        total_samples = len(sorted_times)
+        print(
+            f"Exported {total_samples} samples for {len(channels)} channels to {output_file}"
+        )
+        return output_file
+
+    def _init_multi_channel_file(
+        self, filename: str, channels: List[int], creation_date: Optional[str] = None
+    ) -> None:
+        """
+        Initialize a multi-channel LabChart export file with header information.
+
+        Args:
+            filename: Path to output file
+            channels: List of channel numbers
+            creation_date: Creation date string (if None, uses "Unknown")
+        """
+        with open(filename, "w") as f:
+            # Write interval (time between samples)
+            if self.time_in_ms:
+                interval = 1000.0 / self.sample_rate
+            else:
+                interval = 1.0 / self.sample_rate
+            f.write(f"Interval= {interval}\n")
+
+            # Write creation date
+            if creation_date:
+                f.write(f"DateTime= {creation_date}\n")
+            else:
+                f.write("DateTime= Unknown\n")
+
+            # TimeFormat (specification unknown, left blank)
+            f.write("TimeFormat= \n")
+
+            # Channel titles - comma separated list
+            channel_titles = ", ".join(str(ch) for ch in channels)
+            f.write(f"ChannelTitle= {channel_titles}\n")
+
+            # Range
+            if self.value_in_uV:
+                range_val = self.range_mV * 1000.0
+            else:
+                range_val = self.range_mV
+            f.write(f"Range= {range_val:.1f}\n")
+
 
 def example_usage():
     """Example of how to use the LabChart exporter"""

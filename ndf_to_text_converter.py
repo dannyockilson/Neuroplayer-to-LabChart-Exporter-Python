@@ -3,7 +3,7 @@
 NDF to Text Converter
 
 Converts Neuroplayer NDF files to readable text format for inspection and
-further processing. The text files can then be used with the bulk_converter.py
+further processing. The text files can then be used with the labchart_exporter.py
 to create LabChart-compatible files.
 
 Usage:
@@ -13,7 +13,7 @@ Usage:
 Features:
     - Converts individual NDF files or entire directories
     - Extracts all channels or specific channels
-    - Creates text files compatible with TextSignalReader
+    - Creates subdirectories per NDF file with E{channel}.txt files
     - Preserves timing information and metadata
     - Handles multiple output formats
 """
@@ -132,9 +132,13 @@ class NDFToTextConverter:
                 print(f"    Channel {channel}: No data found")
                 return None
 
-            # Create output filename
+            # Create subdirectory for this NDF file
             base_name = os.path.splitext(os.path.basename(input_file))[0]
-            output_file = os.path.join(output_dir, f"{base_name}_ch{channel:02d}.txt")
+            file_output_dir = os.path.join(output_dir, base_name)
+            os.makedirs(file_output_dir, exist_ok=True)
+
+            # Create output filename using E{channel} naming convention
+            output_file = os.path.join(file_output_dir, f"E{channel}.txt")
 
             # Write text file based on format
             if self.output_format == "simple":

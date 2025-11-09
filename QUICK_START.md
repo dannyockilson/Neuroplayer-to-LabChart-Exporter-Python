@@ -122,9 +122,12 @@ python ndf_to_text_converter.py my-ndf-files
 This will:
 - Read all the .ndf files in your "my-ndf-files" folder
 - Extract the EEG data from each file
-- Create text files in a new folder called "my-ndf-files_text"
+- Create a folder called "my-ndf-files_text" with subdirectories for each NDF file
+- Each subdirectory contains E1.txt, E2.txt, etc. for each channel
 
-**What happens:** The tool finds all your recording files and extracts the brain signal data from each one. Each channel gets its own text file (like recording1_ch00.txt, recording1_ch01.txt, etc.).
+**What happens:** The tool finds all your recording files and extracts the brain signal data from each one. For each NDF file (like M1555404530.ndf), it creates a matching subdirectory (M1555404530/) with separate channel files (E0.txt, E1.txt, E2.txt, etc.).
+
+**Important note on channel zero:** The output channel 0 represents the clock messages channel and occur at 128 Hz.
 
 #### Performance Notes
 
@@ -152,22 +155,24 @@ python bulk_converter.py my-ndf-files_text --range 120
 ```
 
 This will:
-- Read all the text files from the previous step
-- Convert them into LabChart-compatible format
+- Read all the subdirectories from the previous step
+- Combine all channels from each subdirectory into a single unified file
 - Create the final files in "my-ndf-files_text_labchart"
 
-**What happens:** The tool takes your readable text files and formats them exactly how LabChart needs them, with proper headers and voltage calculations.
+**What happens:** The tool processes each subdirectory (representing one NDF file) and combines all its channels (E1.txt, E2.txt, etc.) into a single LabChart file with all channels as columns separated by tabs. This means you get one LabChart file per original NDF file, with all channels included in that single file.
 
 ## Step 5: Import into LabChart
 
-Your converted files are now in the "my-ndf-files_text_labchart" folder. These files will be named E1.txt, E2.txt, E3.txt, etc.
+Your converted files are now in the "my-ndf-files_text_labchart" folder. Each file is named after the original NDF file (e.g., M1555404530.txt) and contains all channels from that recording in a single file.
 
 To import them into LabChart:
 1. Open LabChart
 2. Go to File → Open or Import
 3. Navigate to your "my-ndf-files_text_labchart" folder
-4. Select the E1.txt, E2.txt files you want to analyze
+4. Select the .txt file(s) you want to analyze (e.g., M1555404530.txt)
 5. Follow LabChart's import wizard
+
+**Note:** Each file contains all channels as separate columns, so you'll see all your EEG channels in a single LabChart document once imported.
 
 ## Common Situations
 

@@ -97,19 +97,40 @@ pip install numpy
 For processing real Neuroplayer NDF files:
 
 ```bash
-# Step 1: Convert NDF files to readable text format
+# Step 1: Convert NDF files to readable text format (creates subdirectories per NDF file)
 python ndf_to_text_converter.py raw_ndf_files/ --output readable_text/
 
-# Step 2: Convert text files to LabChart format
+# Step 2: Convert subdirectories to unified LabChart format (one file per NDF source)
 python bulk_converter.py readable_text/ --output labchart_files/ --range 120
+```
+
+**Output Structure:**
+
+After Step 1, you'll have:
+```
+readable_text/
+├── M1555404530/
+│   ├── E1.txt
+│   ├── E2.txt
+│   └── E15.txt
+└── M1555404531/
+    ├── E1.txt
+    └── E2.txt
+```
+
+After Step 2, you'll have unified LabChart files:
+```
+labchart_files/
+├── M1555404530.txt  (contains all channels in tab-separated columns)
+└── M1555404531.txt  (contains all channels in tab-separated columns)
 ```
 
 ### Direct Text to LabChart Conversion
 
-For pre-existing text files or mock data:
+For directories containing E{channel}.txt files:
 
 ```bash
-# Convert all text files in a directory
+# Convert all channel directories to unified LabChart files
 python bulk_converter.py input_folder
 
 # Custom output directory
@@ -118,6 +139,8 @@ python bulk_converter.py input_folder output_folder
 # With custom settings
 python bulk_converter.py input_folder output_folder --sample-rate 512 --range 120
 ```
+
+**Note:** The bulk converter now expects a directory structure with subdirectories containing E{channel}.txt files (e.g., E1.txt, E2.txt). Each subdirectory is converted into a single unified LabChart file with all channels as tab-separated columns.
 
 #### Bulk Converter Options
 
@@ -140,20 +163,17 @@ Options:
 #### Bulk Converter Examples
 
 ```bash
-# Standard DC transmitter processing
-python bulk_converter.py eeg_data output --range 120
+# Standard DC transmitter processing (processes subdirectories)
+python bulk_converter.py ndf_text_output output --range 120
 
 # AC transmitter with different settings
-python bulk_converter.py eeg_data output --range 30 --sample-rate 1024
+python bulk_converter.py ndf_text_output output --range 30 --sample-rate 1024
 
 # European format with microvolts
-python bulk_converter.py eeg_data output --commas --microvolts
+python bulk_converter.py ndf_text_output output --commas --microvolts
 
 # High precision timing
-python bulk_converter.py eeg_data output --milliseconds --absolute-time
-
-# Test with provided mock data
-python bulk_converter.py mock-inputs test_output --verbose
+python bulk_converter.py ndf_text_output output --milliseconds --absolute-time
 ```
 
 ## NDF File Processing
@@ -194,9 +214,21 @@ Options:
 
 #### Output Formats
 
-- **Simple**: One sample value per line (compatible with `bulk_converter.py`)
+- **Simple**: One sample value per line (compatible with `bulk_converter.py`). Files are organized in subdirectories named after the source NDF file, with individual E{channel}.txt files for each channel.
 - **Detailed**: Includes interval and timing information for analysis
 - **CSV**: Comma-separated format for spreadsheet analysis
+
+**Output Structure:** When converting NDF files, the tool creates subdirectories for each source file:
+```
+output_dir/
+├── M1555404530/    (from M1555404530.ndf)
+│   ├── E1.txt
+│   ├── E2.txt
+│   └── E15.txt
+└── M1555404531/    (from M1555404531.ndf)
+    ├── E1.txt
+    └── E2.txt
+```
 
 #### NDF File Structure
 
@@ -350,12 +382,16 @@ intervals = [
 
 ## Output Format
 
-The exporter creates text files named `E{channel_num}.txt` with the following structure:
+The exporter creates unified LabChart files with all channels in a single file:
+
+### Single-Channel Format (Legacy)
+
+Individual channel files `E{channel_num}.txt` with the following structure:
 
 ```
 Interval= 0.001953125
 DateTime= 2025-11-03 10:00:00
-TimeFormat= 
+TimeFormat=
 ChannelTitle= 1
 Range= 120.0
 0.000000 0.0915
@@ -364,24 +400,46 @@ Range= 120.0
 ...
 ```
 
+### Multi-Channel Unified Format (Current)
+
+Unified files with all channels as tab-separated columns:
+
+```
+Interval= 0.001953125
+DateTime= 2025-11-03 10:00:00
+TimeFormat=
+ChannelTitle= 1, 2, 15
+Range= 120.0
+0.000000	0.0915	0.0923	0.0931
+0.001953	0.0916	0.0924	0.0932
+0.003906	0.0917	0.0925	0.0933
+...
+```
+
 ### Header Fields
 
 - **Interval** - Time between samples (1/sample_rate)
 - **DateTime** - Recording creation date
 - **TimeFormat** - Reserved (left blank per LabChart spec)
-- **ChannelTitle** - Channel identifier
+- **ChannelTitle** - Channel identifier(s), comma-separated for multi-channel
 - **Range** - Full-scale range in mV or μV
 
 ### Data Format
 
-Each line after the header contains:
+**Single-channel:** Each line after the header contains:
 ```
 <time> <voltage>
+```
+
+**Multi-channel:** Each line after the header contains:
+```
+<time>	<voltage_ch1>	<voltage_ch2>	<voltage_ch3>	...
 ```
 
 Where:
 - `time` - Timestamp in seconds or milliseconds
 - `voltage` - Signal amplitude in mV or μV
+- Tab character separates columns in multi-channel format
 
 ## Glitch Filtering
 
@@ -512,9 +570,10 @@ The Python version maintains functional equivalence with the TCL script while pr
 2. **Timestamps** should be in seconds (floating point)
 3. **File names** follow the pattern `E{channel}.txt` per Neuroplayer convention
 4. The exporter **appends** to existing files - delete old files if you want fresh exports
-5. **Multiple channels** each get their own output file
+5. **Multi-channel output** combines all channels into a single unified file with tab-separated columns
 6. **NDF files** are automatically parsed to extract channel data and metadata
-7. **Text conversion** creates files named `filename_ch{XX}.txt` for easy identification
+7. **Text conversion** creates subdirectories per NDF file with `E{channel}.txt` files for each channel
+8. **Directory structure** is important: bulk_converter expects subdirectories containing E{channel}.txt files
 
 ## Troubleshooting
 

@@ -155,3 +155,164 @@ class TestLabChartExporter:
         exporter = LabChartExporter(range_mV=240.0)
         expected = 240.0 / 65536.0
         assert abs(exporter.mV_per_count - expected) < 1e-10
+
+
+class TestMultiChannelExport:
+    """Test cases for multi-channel export functionality."""
+
+    def test_export_multi_channel_basic(self):
+        """Test basic multi-channel export."""
+        exporter = LabChartExporter()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_file = os.path.join(temp_dir, "multi_channel.txt")
+
+            # Create data for two channels
+            channel_data = {
+                1: [(0.0, [32768, 32769, 32770])],
+                2: [(0.0, [32771, 32772, 32773])],
+            }
+
+            result_file = exporter.export_multi_channel(
+                output_file=output_file,
+                channel_data=channel_data,
+                creation_date="2023-01-01 12:00:00",
+            )
+
+            assert result_file == output_file
+            assert os.path.exists(output_file)
+
+            # Verify content
+            with open(output_file, "r") as f:
+                content = f.read()
+                assert "ChannelTitle= 1, 2" in content
+                assert "\t" in content  # Tab-separated columns
+
+    def test_export_multi_channel_header_format(self):
+        """Test that multi-channel header has correct format."""
+        exporter = LabChartExporter()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_file = os.path.join(temp_dir, "test.txt")
+
+            channel_data = {
+                1: [(0.0, [32768])],
+                5: [(0.0, [32769])],
+                10: [(0.0, [32770])],
+            }
+
+            exporter.export_multi_channel(
+                output_file=output_file,
+                channel_data=channel_data,
+                creation_date="2023-01-01 12:00:00",
+            )
+
+            with open(output_file, "r") as f:
+                lines = f.readlines()
+                # Check header lines
+                assert "Interval= 0.001953125" in lines[0]
+                assert "DateTime= 2023-01-01 12:00:00" in lines[1]
+                assert "ChannelTitle= 1, 5, 10" in lines[3]
+
+    def test_export_multi_channel_data_format(self):
+        """Test that multi-channel data is tab-separated."""
+        exporter = LabChartExporter()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_file = os.path.join(temp_dir, "test.txt")
+
+            # Simple data to verify format
+            channel_data = {
+                1: [(0.0, [32768, 33000])],
+                2: [(0.0, [32768, 33000])],
+            }
+
+            exporter.export_multi_channel(
+                output_file=output_file, channel_data=channel_data
+            )
+
+            with open(output_file, "r") as f:
+                lines = f.readlines()
+                # Skip header (5 lines)
+                data_lines = lines[5:]
+                for line in data_lines:
+                    if line.strip():
+                        # Should have timestamp + 2 channels = 3 columns
+                        parts = line.strip().split("\t")
+                        assert len(parts) == 3
+
+    def test_export_multi_channel_empty_data(self):
+        """Test error handling for empty channel data."""
+        exporter = LabChartExporter()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_file = os.path.join(temp_dir, "test.txt")
+
+            with pytest.raises(ValueError):
+                exporter.export_multi_channel(
+                    output_file=output_file, channel_data={}
+                )
+
+    def test_export_multi_channel_channel_with_no_intervals(self):
+        """Test error handling for channel with no intervals."""
+        exporter = LabChartExporter()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_file = os.path.join(temp_dir, "test.txt")
+
+            channel_data = {
+                1: [(0.0, [32768])],
+                2: [],  # Empty intervals
+            }
+
+            with pytest.raises(ValueError):
+                exporter.export_multi_channel(
+                    output_file=output_file, channel_data=channel_data
+                )
+
+    def test_export_multi_channel_multiple_intervals(self):
+        """Test multi-channel export with multiple intervals."""
+        exporter = LabChartExporter()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_file = os.path.join(temp_dir, "test.txt")
+
+            channel_data = {
+                1: [(0.0, [32768, 32769]), (1.0, [32770, 32771])],
+                2: [(0.0, [32800, 32801]), (1.0, [32802, 32803])],
+            }
+
+            exporter.export_multi_channel(
+                output_file=output_file, channel_data=channel_data
+            )
+
+            assert os.path.exists(output_file)
+
+            # Verify file has data from both intervals
+            with open(output_file, "r") as f:
+                lines = f.readlines()
+                # Should have header + data from both intervals
+                assert len(lines) >= 9  # 5 header lines + at least 4 data lines
+
+    def test_export_multi_channel_sorted_channels(self):
+        """Test that channels are sorted in output."""
+        exporter = LabChartExporter()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_file = os.path.join(temp_dir, "test.txt")
+
+            # Provide channels in non-sorted order
+            channel_data = {
+                15: [(0.0, [32768])],
+                1: [(0.0, [32769])],
+                5: [(0.0, [32770])],
+            }
+
+            exporter.export_multi_channel(
+                output_file=output_file, channel_data=channel_data
+            )
+
+            with open(output_file, "r") as f:
+                content = f.read()
+                # Channels should be sorted: 1, 5, 15
+                assert "ChannelTitle= 1, 5, 15" in content
